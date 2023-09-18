@@ -4,7 +4,7 @@ from scipy import stats
 
 def logsumexp_(sum_series):
     max = np.max(sum_series)
-    if max > 1e30 or max < -1e30:
+    if max > 1e60 or max < -1e60:
         return max
     else:
         a = np.exp(sum_series[0] - max)
@@ -19,7 +19,7 @@ def cond_prob_(param):
     for r in range(param['regimes']):
         conditional_prob[r, :] = stats.multivariate_normal(mean=None,
                                                            cov=param['sigma'][r, :, :]).logpdf(param['residuals'].T).T
-    print(np.exp(conditional_prob))
+    #print(np.exp(conditional_prob))
     return conditional_prob
 
 
@@ -30,6 +30,7 @@ def forward_(trans_prob, ln_eta_t, ini_dist):
         for j in range(trans_prob.shape[0]):
             alpha_trans = alpha[:, t - 1] + trans_prob[:, j]
             alpha[j, t] = logsumexp_(alpha_trans) + ln_eta_t[j, t]
+    #print(f'forward{alpha}')
     return alpha
 
 
@@ -43,6 +44,7 @@ def backward_(trans_prob, ln_eta_t):
         for j in range(trans_prob.shape[0]):
             back_trans = ln_eta_t[j, [t + 1]] + trans_prob[j, :]
             back[j, t] = back[j, t + 1] + logsumexp_(back_trans)
+    #print(f'back:{back}')
     return back
 
 
@@ -78,7 +80,9 @@ def expectation(param):
     joint probability of state j(t) and k(t+1).
     """
     ln_eta_t = cond_prob_(param)
+    print(f'this is eta t: {ln_eta_t}')
     alpha_hat = forward_(param['transition_prob_mat'], ln_eta_t, param['epsilon_0'])
     beta_hat = backward_(param['transition_prob_mat'], ln_eta_t)
     smoothed_prob, state_joint = smoothed_joint_(param['transition_prob_mat'], ln_eta_t, alpha_hat, beta_hat, )
+    #print(f'this is state joint prob:{state_joint}')
     return smoothed_prob, state_joint

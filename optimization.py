@@ -50,7 +50,7 @@ def marginal_density(x, opt_parameters):
         else:
             sigma[regime, :, :] = b_mat @ lam_m[regime - 1, :, :] @ b_mat.T
 
-        x = np.random.multivariate_normal(mean=mean_zero, cov=sigma[regime, :, :], size=50) # , check_valid='ignore'
+        x = np.random.multivariate_normal(mean=mean_zero, cov=sigma[regime, :, :], size=50)  # , check_valid='ignore'
         cov = LedoitWolf().fit(x)
         sigma[regime, :, :] = cov.covariance_
 
@@ -80,6 +80,38 @@ def b_matrix_sigma(x, k, regimes):
     return b_mat, sigma
 
 
+def estimate_theta_hat(zt_1, delta_yt, smoothed_prob, param):
+    regimes = param['regimes']
+    sigma = param['sigma']
+
+    # Denominator for the estimate of theta hat
+    obs = delta_yt.shape[1]
+    msum = 0
+    for m in range(regimes):
+        tsum = 0
+
+        for t in range(1, obs):
+            zt_new = zt_1[:, [t]]
+            tsum = tsum + smoothed_prob[m, [t]] * zt_new @ zt_new.T
+        msum = msum + np.kron(tsum, np.linalg.pinv(sigma[m]))
+    denom = np.linalg.pinv(msum)
+    # print(denom.shape)
+
+    # numerator for the estimate of theta hat
+    tsum = 0
+    for t in range(1, obs):
+        d_yt_new = delta_yt[:, [t]]
+        zt_new = zt_1[:, [t]]
+        msum = 0
+        for m in range(regimes):
+            msum = msum + np.kron((smoothed_prob[m, [t]] * zt_new), np.linalg.pinv(sigma[m]))
+        tsum = tsum + msum @ d_yt_new
+        # print(tsum.shape)
+    theta_hat = denom @ tsum
+    theta_hat = theta_hat.reshape([-1, 1])
+    return theta_hat
+
+
 def m_step(state_joint, smoothed_prob, x0, zt, delta_y, parameters):
     # optimization additional arguments (tuple)
     print('========Optimization=========')
@@ -91,7 +123,7 @@ def m_step(state_joint, smoothed_prob, x0, zt, delta_y, parameters):
 
     transition_prob_mat = trans_prob_mat(state_joint)
 
-    print(f'this is transition prob mat:{transition_prob_mat} ')
+    # print(f'this is transition prob mat:{np.exp(transition_prob_mat)} ')
 
     ####################################
     # estimating Covariance matrices
@@ -109,18 +141,16 @@ def m_step(state_joint, smoothed_prob, x0, zt, delta_y, parameters):
     # no need to take  exponential of smoothed prob as optimization file does it there.
     op_params = [parameters['regimes'], k, parameters['residuals'], smoothed_prob]
 
-    res = minimize(marginal_density, x0, args=op_params,
-                   bounds=bound_list,  method='Nelder-Mead', options={'maxiter': 15000, 'disp': False})
-
+    res = minimize(marginal_density, x0, args=op_params, tol=1e-13,
+                   bounds=bound_list, method='cobyla', options={'maxiter': 15000, 'disp': False})
 
     print(res.message)
     b_mat, sigma = b_matrix_sigma(res.x, k, parameters['regimes'])
 
-
     ####################################
     # estimate weighted least-square parameters
     ####################################
-
+    ''' 
     for regime in range(parameters['regimes']):
         t_sum = np.zeros([zt.shape[0], zt.shape[0]])
         m_sum = np.zeros([zt.shape[0] * k, zt.shape[0] * k])
@@ -138,6 +168,8 @@ def m_step(state_joint, smoothed_prob, x0, zt, delta_y, parameters):
         t_sum_numo += m_sum_numo @ delta_y[:, [t]]
 
     theta_hat = denominator @ t_sum_numo
+    '''
+    theta_hat = estimate_theta_hat(zt, delta_y, np.exp(smoothed_prob), parameters)
 
     ####################################
     # residuals estimate
@@ -147,4 +179,5 @@ def m_step(state_joint, smoothed_prob, x0, zt, delta_y, parameters):
     for t in range(zt.shape[1]):
         resid[:, [t]] = delta_y[:, [t]] - np.kron(zt[:, [t]].T, np.identity(delta_y.shape[0])) @ theta_hat
 
+    #print(f'this is residuals{resid}')
     return transition_prob_mat, b_mat, sigma, theta_hat, resid, res.x

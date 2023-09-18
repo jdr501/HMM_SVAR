@@ -35,8 +35,8 @@ def initialize(number_regimes, no_lags, beta_hat=None):
             sigma_array[regime, :, :] = b_matrix @ lam @ b_matrix.T
 
     params = {'regimes': number_regimes,
-              'epsilon_0': (np.log(np.ones(number_regimes) / number_regimes)).reshape(-1, 1),
-              'transition_prob_mat': np.log(np.ones([number_regimes, number_regimes]) / number_regimes),
+              'epsilon_0': (np.log(np.array([0.2, 0.8]))).reshape(-1, 1),
+              'transition_prob_mat': np.log(np.array([[0.8,0.2], [0.3,0.7]])),
               'B_matrix': b_matrix,
               'lambda_m': np.identity(b_matrix.shape[0]),
               'sigma': sigma_array,
